@@ -38,7 +38,7 @@ for blueprint in blueprintlist.json()['items']:
   transtable=bp_name.maketrans("_","-")
   bp_name=bp_name.translate(transtable)
   print(f'Blueprint: {bp_name}')
-  # Multiple ways to get the switches via AOS API. I prefer this one as it groups them by role...
+  # Multiple ways to get the switches via AOS API. 
   bp_systems=requests.get(f'{aos_url}/api/blueprints/{bpid}/nodes?node_type=system',headers=headers,verify=False)
   systems=bp_systems.json()['nodes']
   
@@ -67,7 +67,7 @@ for blueprint in blueprintlist.json()['items']:
       dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-leafs", devices=leafnames)
       dgs.description=f"Leaf switches from AOS blueprint {bp_name}"
       hb.device_group.add(dgs)
-
+  # Same thing for spines
   if len(spinenames) > 0:
       dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-spines", devices=spinenames)
       dgs.description=f"Spine switches from AOS blueprint {bp_name}"
