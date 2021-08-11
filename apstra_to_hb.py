@@ -4,24 +4,40 @@ from pprint import pprint
 from jnpr.healthbot import HealthBotClient
 from jnpr.healthbot import DeviceSchema
 from jnpr.healthbot import DeviceGroupSchema
+import argparse
 
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-aos_username="USER"
-aos_password="PASSWORD"
-aos_url="https://xx.xx.xx.xx"
-device_user="USER"
-device_password="PASSWORD"
+parser = argparse.ArgumentParser(description='Onboard all devices from Apstra BP into HealthBot')
+optional = parser._action_groups.pop()
+required = parser.add_argument_group('required arguments')
+required.add_argument("-as","--aos_url",help="Apstra instance URL", required=True)
+required.add_argument("-hs","--hb_ip",help="Healthbot server IP", required=True)
 
-hb_ip="xxx.xxx.xxx.xxx"
-hb_user="USER"
-hb_password="PASSWORD"
+optional.add_argument("-au","--aos_user",help="Apstra instance username",default="admin")
+optional.add_argument("-ap","--aos_passwd",help="Apstra instance password",default="admin")
+
+optional.add_argument("-hu","--hb_user",help="Healthbot username",default="admin")
+optional.add_argument("-hp","--hb_passwd",help="Healthbot password",default="healthbot")
+
+optional.add_argument("-du","--device_user",help="Juniper device username",default="root")
+optional.add_argument("-dp","--device_passwd",help="Juniper device password",default="password")
+
+parser._action_groups.append(optional)
+args=parser.parse_args()
+
+hb_ip=args.hb_ip
+hb_user=args.hb_user
+hb_password=args.hb_passwd
+
+aos_url=args.aos_url
+
 # Step 1 - Connect to HealthBot and get hbez handle
 hb=HealthBotClient(hb_ip,hb_user,hb_password)
 hb.open()
 # Step 2 - Get AOS API token
-tokenreq_body={'username':aos_username,'password':aos_password}
+tokenreq_body={'username':args.aos_user,'password':args.aos_passwd}
 req_header={'accept':'application/json','content-type':'application/json'}
 token_res=requests.post(f"{aos_url}/api/aaa/login",headers=req_header,json=tokenreq_body,verify=False)
 
