@@ -30,7 +30,8 @@ args=parser.parse_args()
 hb_ip=args.hb_ip
 hb_user=args.hb_user
 hb_password=args.hb_passwd
-
+device_password=args.device_passwd
+device_user=args.device_user
 aos_url=args.aos_url
 
 # Step 1 - Connect to HealthBot and get hbez handle
