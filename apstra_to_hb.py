@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import requests
 import json
 from pprint import pprint
@@ -33,6 +34,7 @@ hb_password=args.hb_passwd
 device_password=args.device_passwd
 device_user=args.device_user
 aos_url=args.aos_url
+bp_roles=dict()
 
 # Step 1 - Connect to HealthBot and get hbez handle
 hb=HealthBotClient(hb_ip,hb_user,hb_password)
@@ -51,19 +53,22 @@ blueprintlist=requests.get(f'{aos_url}/api/blueprints',headers=headers,verify=Fa
 # Step 4 - Iterate over all blueprints(creating different device groups in HB per blueprint)
 for blueprint in blueprintlist.json()['items']:
   bpid=blueprint['id']
+  bp_roles[bpid]=dict()
   bp_name=blueprint['label']
   transtable=bp_name.maketrans("_","-")
   bp_name=bp_name.translate(transtable)
   print(f'Blueprint: {bp_name}')
-  # Multiple ways to get the switches via AOS API. 
+  # Multiple ways to get the switches via AOS API.
   bp_systems=requests.get(f'{aos_url}/api/blueprints/{bpid}/nodes?node_type=system',headers=headers,verify=False)
   systems=bp_systems.json()['nodes']
-  
+
   leafnames=[]
   spinenames=[]
+  superspinenames=[]
   # Not sure if I can simplify this bit with graphql or not, so for now I need to pull facts from each device agent
   for key,system in systems.items():
-    if system['role'] == 'spine' or system['role'] == 'leaf':
+    if system['role'] in ['spine', 'leaf', 'superspine']:
+        bp_roles[bpid][system['role']] = 1
         switchinfo=requests.get(f"{aos_url}/api/systems/{system['system_id']}",headers=headers,verify=False)
         mgmt_ip=switchinfo.json()['facts']['mgmt_ipaddr']
         hostname=switchinfo.json()['status']['hostname']
@@ -73,6 +78,8 @@ for blueprint in blueprintlist.json()['items']:
             leafnames.append(hostname)
         if system['role'] == 'spine':
             spinenames.append(hostname)
+        if system['role'] == 'superspine':
+            superspinenames.append(hostname)
     # Now add this device to HB
         ds = DeviceSchema(device_id=hostname, host=mgmt_ip,
                   vendor={vendor : {'operating-system': vendor_os}},
@@ -89,7 +96,13 @@ for blueprint in blueprintlist.json()['items']:
       dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-spines", devices=spinenames)
       dgs.description=f"Spine switches from AOS blueprint {bp_name}"
       hb.device_group.add(dgs)
+  # Same thing for superspines
+  if len(spinenames) > 0:
+      dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-superspines", devices=superspinenames)
+      dgs.description=f"Super Spine switches from AOS blueprint {bp_name}"
+      hb.device_group.add(dgs)
 
+# Add to Apstra confglet
 grpc_configlet= {
       "ref_archs": [
           "two_stage_l3clos"
@@ -105,22 +118,30 @@ grpc_configlet= {
       ],
       "display_name": "enableoc"
     }
-bp_configlet= {
-    "configlet": {
-      "generators": [
-        {
-          "config_style": "junos",
-          "section": "system",
-          "template_text": "system {\n services {\n   extension-service {\n    request-response {\n     grpc {\n      clear-text;\n     }\n    }\n   }\n  }\n}",
-          "negation_template_text": "",
-          "filename": ""
-        }
-      ],
-      "display_name": "enableoc"
-    },
-    "condition": "role in [\"spine\",\"leaf\"]",
-    "label": "enableoc"
-}
 create_oc_configlet=requests.post(f'{aos_url}/api/design/configlets',headers=headers,json=grpc_configlet,verify=False)
-apply_oc_configlet=requests.post(f'{aos_url}/api/blueprints/{bpid}/configlets',headers=headers,json=bp_configlet,verify=False)
-pprint(apply_oc_configlet.json())
+
+# Assign configlet 'enableoc' to blueprints
+print("Assign configlet 'enableoc' to blueprints")
+for blueprint in blueprintlist.json()['items']:
+  bpid=blueprint['id']
+  bp_configlet= {
+      "configlet": {
+        "generators": [
+          {
+            "config_style": "junos",
+            "section": "system",
+            "template_text": "system {\n services {\n   extension-service {\n    request-response {\n     grpc {\n      clear-text;\n     }\n    }\n   }\n  }\n}",
+            "negation_template_text": "",
+            "filename": ""
+          }
+        ],
+        "display_name": "enableoc"
+      },
+      "condition": "role in "+ str(list(bp_roles[bpid].keys())) ,
+      "label": "enableoc"
+  }
+  apply_oc_configlet=requests.post(f'{aos_url}/api/blueprints/{bpid}/configlets',headers=headers,json=bp_configlet,verify=False)
+  print("Blueprint ID "+str(bpid)+ " == apply ID: "+str(apply_oc_configlet.json()))
+
+print ("Done - please login to Healthbot and Apstra for commit changes")
+exit(0)
