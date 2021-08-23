@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import requests
 import json
 from pprint import pprint
@@ -55,15 +56,16 @@ for blueprint in blueprintlist.json()['items']:
   transtable=bp_name.maketrans("_","-")
   bp_name=bp_name.translate(transtable)
   print(f'Blueprint: {bp_name}')
-  # Multiple ways to get the switches via AOS API. 
+  # Multiple ways to get the switches via AOS API.
   bp_systems=requests.get(f'{aos_url}/api/blueprints/{bpid}/nodes?node_type=system',headers=headers,verify=False)
   systems=bp_systems.json()['nodes']
-  
+
   leafnames=[]
   spinenames=[]
+  superspinenames=[]
   # Not sure if I can simplify this bit with graphql or not, so for now I need to pull facts from each device agent
   for key,system in systems.items():
-    if system['role'] == 'spine' or system['role'] == 'leaf':
+    if system['role'] == 'spine' or system['role'] == 'leaf' or system['role'] == 'superspine':
         switchinfo=requests.get(f"{aos_url}/api/systems/{system['system_id']}",headers=headers,verify=False)
         mgmt_ip=switchinfo.json()['facts']['mgmt_ipaddr']
         hostname=switchinfo.json()['status']['hostname']
@@ -73,6 +75,8 @@ for blueprint in blueprintlist.json()['items']:
             leafnames.append(hostname)
         if system['role'] == 'spine':
             spinenames.append(hostname)
+        if system['role'] == 'superspine':
+            superspinenames.append(hostname)
     # Now add this device to HB
         ds = DeviceSchema(device_id=hostname, host=mgmt_ip,
                   vendor={vendor : {'operating-system': vendor_os}},
@@ -88,6 +92,11 @@ for blueprint in blueprintlist.json()['items']:
   if len(spinenames) > 0:
       dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-spines", devices=spinenames)
       dgs.description=f"Spine switches from AOS blueprint {bp_name}"
+      hb.device_group.add(dgs)
+  # Same thing for superspines
+  if len(spinenames) > 0:
+      dgs = DeviceGroupSchema(device_group_name=f"{bp_name}-superspines", devices=superspinenames)
+      dgs.description=f"Super Spine switches from AOS blueprint {bp_name}"
       hb.device_group.add(dgs)
 
 grpc_configlet= {
